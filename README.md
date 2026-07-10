@@ -1,5 +1,5 @@
 # Clear Morning
-Minimalistic and duckduckgo version of @SaltyAom's Chrome/Edge "New Tab" page.
+Minimalistic and duckduckgo version of [@SaltyAom](https://github.com/SaltyAom)'s Chrome/Edge "New Tab" page.
 
 ![Screen Shot 2564-08-28 at 13 51 57](Screenshot_20260711_011112.png)
 
