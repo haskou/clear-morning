@@ -4,8 +4,8 @@
         <title>New Tab</title>
         <meta charset="utf8" />
         <meta name="viewport" content="width=device-width, initial-scale=1" />
-        <link rel="preconnect" href="https://google.com" />
-        <link rel="preconnect" href="https://search.saltyaom.com" />
+        <link rel="preconnect" href="https://duckduckgo.com" />
+        <link rel="preconnect" href="https://api.bing.com" />
         <link rel="preload" href="./ba_pv5.mp4" as="video" />
 
         <link
@@ -110,7 +110,7 @@
                 color: #fff;
                 border: 1px solid rgba(255, 255, 255, 0.25);
                 background-color: rgba(0, 0, 0, 0.1);
-                backdrop-filter: blur(8px);
+                backdrop-filter: blur(15px);
                 /* border: 3px solid #eee; */
                 border-radius: 24px;
                 /* box-shadow: 0 2px 8px rgba(0, 0, 0, 0.0875),
@@ -220,6 +220,10 @@
                 backdrop-filter: blur(8px);
                 border-radius: 24px;
                 overflow-y: auto;
+            }
+
+            #suggestion:empty {
+                display: none;
             }
 
             .-custom-scrollbar::-webkit-scrollbar {
@@ -475,7 +479,7 @@
                     return provider.link(search)
                 }
 
-                return `https://www.google.com/search?q=${search}`
+                return `https://duckduckgo.com/?q=${encodeURIComponent(search)}`
             }
 
             document.addEventListener(
@@ -498,38 +502,6 @@
                         const bg = id('bg')
                         bg.currentTime = timestamp
                     }
-
-                    // Clock
-                    let clearSecondClock = false
-                    let secondClock
-
-                    const startClock = (initial = false) => {
-                        const time = new Date()
-
-                        const hour = time.getHours()
-                        const minute = time.getMinutes()
-
-                        if (displayedMinute.textContent == minute) return
-
-                        displayedMinute.textContent =
-                            minute <= 9 ? `0${minute}` : minute
-
-                        if (!clearSecondClock && !initial) {
-                            clearSecondClock = true
-                            clearInterval(secondClock)
-                            setInterval(startClock, 60000)
-                        }
-
-                        if (displayedHour.textContent != hour)
-                            displayedHour.textContent = hour
-                    }
-
-                    startClock(true)
-
-                    secondClock = setInterval(
-                        startClock,
-                        (60 - new Date().getSeconds()) * 1000
-                    )
 
                     id('search').addEventListener('submit', (event) => {
                         event.preventDefault()
@@ -624,14 +596,14 @@
                         })
                     }
 
-                    let abortController = new AbortController()
+                    let suggestionRequestId = 0
 
                     const fetchSuggestion = () => {
-                        abortController.abort()
-                        abortController = new AbortController()
+                        const requestId = ++suggestionRequestId
 
                         // Remove Japanese character joiner
-                        let value = searchBox.value.replace(/\\\b/g, '')
+                        let value = searchBox.value.replace(/\\/g, '')
+                        value = value.trim()
 
                         if (!Number.isNaN(+value)) {
                             const index = +value
@@ -668,24 +640,60 @@
                             }
                         }
 
-                        fetch(`https://search.saltyaom.com/hint/${value}`, {
-                            signal: abortController.signal
-                        })
-                            .then((res) => res.json())
-                            .catch()
-                            .then(([_, ...suggestions] = []) => {
-                                if (!suggestions && !value) updateSuggestion([])
+                        if (!value) return updateSuggestion([])
 
-                                updateSuggestion(
-                                    suggestions.map((suggestion) => ({
-                                        label: suggestion,
-                                        href: composeLink(prefix + suggestion)
-                                    }))
-                                )
-                            })
+                        // Bing supports JSONP. A <script> request is not subject to
+                        // fetch CORS rules, so this also works when opened via file://.
+                        const callbackName = `__bingSuggest_${requestId}`
+                        const script = document.createElement('script')
+
+                        const cleanup = () => {
+                            script.remove()
+                            delete window[callbackName]
+                        }
+
+                        window[callbackName] = ([, suggestions = []] = []) => {
+                            cleanup()
+
+                            // Ignore a slower response from an older keystroke.
+                            if (
+                                requestId !== suggestionRequestId ||
+                                !searchBox.value.trim()
+                            )
+                                return updateSuggestion([])
+
+                            updateSuggestion(
+                                suggestions.map((suggestion) => ({
+                                    label: suggestion,
+                                    href: composeLink(prefix + suggestion)
+                                }))
+                            )
+                        }
+
+                        script.onerror = () => {
+                            cleanup()
+
+                            if (requestId === suggestionRequestId)
+                                updateSuggestion([])
+                        }
+
+                        script.src =
+                            `https://api.bing.com/osjson.aspx?query=${encodeURIComponent(value)}` +
+                            `&JsonType=callback&JsonCallback=${encodeURIComponent(callbackName)}`
+
+                        document.head.appendChild(script)
+                    }
+
+                    const clearSuggestionsWhenEmpty = () => {
+                        if (searchBox.value.trim()) return
+
+                        suggestionRequestId++
+                        updateSuggestion([])
                     }
 
                     searchBox.addEventListener('input', () => {
+                        clearSuggestionsWhenEmpty()
+
                         const newMode = detectSearchMode(mode, searchBox.value)
                         if (newMode != null) {
                             mode = newMode
@@ -707,6 +715,16 @@
                     searchBox.addEventListener('input', fetchSuggestion, {
                         passive: true
                     })
+                    searchBox.addEventListener(
+                        'keyup',
+                        clearSuggestionsWhenEmpty,
+                        { passive: true }
+                    )
+                    searchBox.addEventListener(
+                        'change',
+                        clearSuggestionsWhenEmpty,
+                        { passive: true }
+                    )
 
                     searchBox.addEventListener('keydown', (event) => {
                         if (
@@ -720,170 +738,11 @@
                                 suggestionBox.firstElementChild.focus()
                             })
                     })
-
-                    displayWeather(true)
-
-                    // const bg = id('bg')
-                    // window.addEventListener('focus', () => {
-                    //     bg.play()
-                    // })
-
-                    // window.addEventListener('blur', () => {
-                    //     bg.pause()
-                    // })
                 },
                 {
                     once: true
                 }
             )
-
-            let isFetching = false
-
-            const getWeatherData = async (initial = false) => {
-                const lastSaved = localStorage.getItem('forecast-until')
-                if (
-                    lastSaved &&
-                    localStorage.getItem('forecast-data') &&
-                    Date.now() < new Date(lastSaved).getTime()
-                )
-                    return JSON.parse(localStorage.getItem('forecast-data'))
-
-                if (initial) throw new Error('No cached data')
-
-                let resolve, reject
-                const geolocationPromise = new Promise((_resolve, _reject) => {
-                    resolve = _resolve
-                    reject = _reject
-                })
-
-                navigator.geolocation.getCurrentPosition(
-                    ({ coords }) => resolve(coords),
-                    (error) => {
-                        console.warn(error)
-
-                        const href = location.href
-                        const query = new URL(href).searchParams
-                        const latlon = query.get('latlon')
-                        if (latlon) {
-                            const [latitude, longitude] = latlon
-                                .split(',')
-                                .map(Number)
-
-                            if (
-                                Number.isNaN(latitude) ||
-                                Number.isNaN(longitude)
-                            )
-                                return resolve(new Error('Invalid location'))
-
-                            return resolve({ latitude, longitude })
-                        }
-
-                        const latLon = prompt('Latitude,Longtitude')
-                        if (!latLon) return resolve(new Error('No location'))
-
-                        const [latitude, longitude] = latLon
-                            .split(',')
-                            .map(Number)
-
-                        if (Number.isNaN(latitude) || Number.isNaN(longitude))
-                            return resolve(new Error('Invalid location'))
-
-                        resolve({ latitude, longitude })
-                    },
-                    {
-                        enableHighAccuracy: true,
-                        maximumAge: 0
-                    }
-                )
-
-                const geolocation = await geolocationPromise
-                if (!geolocation || geolocation instanceof Error) return
-
-                const { latitude, longitude } = geolocation
-
-                if (isFetching) return
-                isFetching = true
-
-                const data = await fetch(
-                    `https://api.open-meteo.com/v1/forecast?latitude=${latitude}&longitude=${longitude}&hourly=temperature_2m,rain,uv_index,cloud_cover,precipitation_probability&timezone=auto&forecast_days=14`
-                ).then((response) => response.json())
-
-                isFetching = false
-
-                localStorage.setItem('forecast-until', data.hourly.time.at(-1))
-
-                localStorage.setItem('forecast-data', JSON.stringify(data))
-
-                return data
-            }
-
-            const icon = (name) => id(`icon-${name}`)
-
-            const displayWeather = async (initial = false) => {
-                const {
-                    latitude,
-                    longitude,
-                    elevation,
-                    hourly: {
-                        time: times,
-                        temperature_2m: temperatures,
-                        rain: rains,
-                        uv_index: uvIndices,
-                        cloud_cover: cloudCovers,
-                        precipitation_probability: predictions
-                    }
-                } = await getWeatherData(initial)
-
-                const startAt = new Date(times[0]).getTime()
-                const secondAt = new Date(times[1]).getTime()
-                const interval = secondAt - startAt
-
-                const hour = new Date().getHours()
-                const currentTime = new Date().getTime()
-                const index = Math.floor((currentTime - startAt) / interval)
-
-                const temperature = temperatures[index]
-                const prediction = predictions[index]
-                const uvIndex = uvIndices[index]
-                const cloudCover = cloudCovers[index]
-                const isNight = hour < 6 || hour > 18
-
-                let iconName = ''
-
-                if (prediction > 70) iconName = 'rain'
-                else if (prediction > 40) iconName = 'drizzle'
-                else if (cloudCover > 50) iconName = 'cloud'
-                else if (uvIndex >= 6) iconName = 'sun'
-                else if (isNight) iconName = 'moon'
-                else iconName = 'sun'
-
-                const icon = id('weather-icon')
-                while (icon.firstChild) icon.removeChild(icon.firstChild)
-
-                icon.appendChild(id(`icon-${iconName}`).content.cloneNode(true))
-
-                id('temperature').textContent = ~~temperature
-                id('rain').textContent = ~~prediction
-                id('uv-index').textContent = ~~uvIndex
-            }
-
-            let clearWeatherClock = false
-            let weatherClock
-
-            const startWeatherInterval = (initial = false) => {
-                if (!clearWeatherClock && !initial) {
-                    clearInterval(weatherClock)
-                    setInterval(displayWeather, 60 * 60 * 1000)
-                } else {
-                    weatherClock = setInterval(
-                        startWeatherInterval,
-                        (60 - new Date().getMinutes()) * 60 * 1000 +
-                            (60 - new Date().getSeconds()) * 1000
-                    )
-                }
-
-                displayWeather()
-            }
         </script>
     </head>
     <template id="t-suggest">
@@ -1010,84 +869,6 @@
             <source src="./ba_pv5.mp4" />
         </video>
         <main id="app">
-            <h1 id="time">
-                <span id="hour">9</span>:<span id="minute">41</span>
-            </h1>
-
-            <button id="status" onclick="displayWeather()">
-                <div class="status" title="temperature">
-                    <div id="weather-icon">
-                        <svg
-                            xmlns="http://www.w3.org/2000/svg"
-                            width="24"
-                            height="24"
-                            viewBox="0 0 24 24"
-                            fill="none"
-                            stroke="currentColor"
-                            stroke-width="2"
-                            stroke-linecap="round"
-                            stroke-linejoin="round"
-                        >
-                            <path
-                                d="M14 14.76V3.5a2.5 2.5 0 0 0-5 0v11.26a4.5 4.5 0 1 0 5 0z"
-                            ></path>
-                        </svg>
-                    </div>
-                    <span id="temperature">-</span>°
-                </div>
-
-                <div class="status" title="rain forecast">
-                    <svg
-                        xmlns="http://www.w3.org/2000/svg"
-                        width="24"
-                        height="24"
-                        viewBox="0 0 24 24"
-                        fill="none"
-                        stroke="currentColor"
-                        stroke-width="2"
-                        stroke-linecap="round"
-                        stroke-linejoin="round"
-                        class="p-0.5"
-                    >
-                        <path
-                            d="M23 12a11.05 11.05 0 0 0-22 0zm-5 7a3 3 0 0 1-6 0v-7"
-                        ></path>
-                    </svg>
-                    <span id="rain">-</span>%
-                </div>
-
-                <div class="status" title="uv index">
-                    <svg
-                        xmlns="http://www.w3.org/2000/svg"
-                        width="24"
-                        height="24"
-                        viewBox="0 0 24 24"
-                        fill="none"
-                        stroke="currentColor"
-                        stroke-width="2"
-                        stroke-linecap="round"
-                        stroke-linejoin="round"
-                        class="p-0.5"
-                    >
-                        <circle cx="12" cy="12" r="5"></circle>
-                        <line x1="12" y1="1" x2="12" y2="3"></line>
-                        <line x1="12" y1="21" x2="12" y2="23"></line>
-                        <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line>
-                        <line
-                            x1="18.36"
-                            y1="18.36"
-                            x2="19.78"
-                            y2="19.78"
-                        ></line>
-                        <line x1="1" y1="12" x2="3" y2="12"></line>
-                        <line x1="21" y1="12" x2="23" y2="12"></line>
-                        <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line>
-                        <line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line>
-                    </svg>
-                    <span id="uv-index">Click to activate</span>
-                </div>
-            </button>
-
             <div id="engine">
                 <form id="search">
                     <div class="input-search-element">
@@ -1152,44 +933,6 @@
                 </form>
 
                 <section id="suggestion" style="display: none"></section>
-
-                <section id="pin">
-                    <a href="https://facebook.com">
-                        <svg
-                            xmlns="http://www.w3.org/2000/svg"
-                            viewBox="0 0 512 512"
-                            fill="currentColor"
-                        >
-                            <path
-                                d="M512 256C512 114.6 397.4 0 256 0S0 114.6 0 256C0 376 82.7 476.8 194.2 504.5V334.2H141.4V256h52.8V222.3c0-87.1 39.4-127.5 125-127.5c16.2 0 44.2 3.2 55.7 6.4V172c-6-.6-16.5-1-29.6-1c-42 0-58.2 15.9-58.2 57.2V256h83.6l-14.4 78.2H287V510.1C413.8 494.8 512 386.9 512 256h0z"
-                            />
-                        </svg>
-                    </a>
-                    <a href="https://x.com">
-                        <svg
-                            xmlns="http://www.w3.org/2000/svg"
-                            viewBox="0 0 512 512"
-                            fill="currentColor"
-                            style="scale: 0.95"
-                        >
-                            <path
-                                d="M389.2 48h70.6L305.6 224.2 487 464H345L233.7 318.6 106.5 464H35.8L200.7 275.5 26.8 48H172.4L272.9 180.9 389.2 48zM364.4 421.8h39.1L151.1 88h-42L364.4 421.8z"
-                            />
-                        </svg>
-                    </a>
-                    <a href="https://github.com">
-                        <svg
-                            xmlns="http://www.w3.org/2000/svg"
-                            viewBox="0 0 496 512"
-                            fill="currentColor"
-                            class="icon"
-                        >
-                            <path
-                                d="M165.9 397.4c0 2-2.3 3.6-5.2 3.6-3.3 .3-5.6-1.3-5.6-3.6 0-2 2.3-3.6 5.2-3.6 3-.3 5.6 1.3 5.6 3.6zm-31.1-4.5c-.7 2 1.3 4.3 4.3 4.9 2.6 1 5.6 0 6.2-2s-1.3-4.3-4.3-5.2c-2.6-.7-5.5 .3-6.2 2.3zm44.2-1.7c-2.9 .7-4.9 2.6-4.6 4.9 .3 2 2.9 3.3 5.9 2.6 2.9-.7 4.9-2.6 4.6-4.6-.3-1.9-3-3.2-5.9-2.9zM244.8 8C106.1 8 0 113.3 0 252c0 110.9 69.8 205.8 169.5 239.2 12.8 2.3 17.3-5.6 17.3-12.1 0-6.2-.3-40.4-.3-61.4 0 0-70 15-84.7-29.8 0 0-11.4-29.1-27.8-36.6 0 0-22.9-15.7 1.6-15.4 0 0 24.9 2 38.6 25.8 21.9 38.6 58.6 27.5 72.9 20.9 2.3-16 8.8-27.1 16-33.7-55.9-6.2-112.3-14.3-112.3-110.5 0-27.5 7.6-41.3 23.6-58.9-2.6-6.5-11.1-33.3 2.6-67.9 20.9-6.5 69 27 69 27 20-5.6 41.5-8.5 62.8-8.5s42.8 2.9 62.8 8.5c0 0 48.1-33.6 69-27 13.7 34.7 5.2 61.4 2.6 67.9 16 17.7 25.8 31.5 25.8 58.9 0 96.5-58.9 104.2-114.8 110.5 9.2 7.9 17 22.9 17 46.4 0 33.7-.3 75.4-.3 83.6 0 6.5 4.6 14.4 17.3 12.1C428.2 457.8 496 362.9 496 252 496 113.3 383.5 8 244.8 8zM97.2 352.9c-1.3 1-1 3.3 .7 5.2 1.6 1.6 3.9 2.3 5.2 1 1.3-1 1-3.3-.7-5.2-1.6-1.6-3.9-2.3-5.2-1zm-10.8-8.1c-.7 1.3 .3 2.9 2.3 3.9 1.6 1 3.6 .7 4.3-.7 .7-1.3-.3-2.9-2.3-3.9-2-.6-3.6-.3-4.3 .7zm32.4 35.6c-1.6 1.3-1 4.3 1.3 6.2 2.3 2.3 5.2 2.6 6.5 1 1.3-1.3 .7-4.3-1.3-6.2-2.2-2.3-5.2-2.6-6.5-1zm-11.4-14.7c-1.6 1-1.6 3.6 0 5.9 1.6 2.3 4.3 3.3 5.6 2.3 1.6-1.3 1.6-3.9 0-6.2-1.4-2.3-4-3.3-5.6-2z"
-                            />
-                        </svg>
-                    </a>
-                </section>
             </div>
         </main>
     </body>
