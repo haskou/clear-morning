@@ -19,7 +19,7 @@ When opening a new tab, the browser search bar will be focused (not the in-page 
 
 To use the page search bar, press `TAB` or reload the page once.
 
-By default, the search bar is using Google search but if prefix with certain command, it will redirect to other search engine.
+By default, the search bar is using Duckduckgo search but if prefix with certain command, it will redirect to other search engine.
 
 To use a command, type the command name with space and the search query.
 
