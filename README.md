@@ -9,14 +9,10 @@ Feature:
 - Video background
 
 ## Setup (Chromium)
-1. Clone the repo
-
-2. Go to new tab changer, point to https://haskou.github.io/clear-morning/
+Go to new tab changer, point to https://haskou.github.io/clear-morning/
 
 ## Setup (Safari)
-1. Clone the repo
-
-2. Go to Safari Preferences -> General -> Home Page -> point to https://haskou.github.io/clear-morning/
+Go to Safari Preferences -> General -> Home Page -> point to https://haskou.github.io/clear-morning/
 
 ## Search bar
 When opening a new tab, the browser search bar will be focused (not the in-page search).
